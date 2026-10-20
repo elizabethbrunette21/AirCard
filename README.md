@@ -16,6 +16,7 @@
 | [协作规则](AGENTS.md) | 后续开发与设备实验的工作约定 |
 | [项目记忆](MEMORY.md) | 当前进度、环境、阻碍与下一步 |
 | [Watch 研究记录](docs/WATCH-RESEARCH.md) | 源码事实、实机观察、静态分析和实验顺序 |
+| [Watch 同步入口分析](docs/WATCH-SYNC-ENTRY.md) | 已定位的系统更新链、资源清单和权限限制 |
 
 开发分支为 [`watch-card-artwork`](https://github.com/elizabethbrunette21/AirCard/tree/watch-card-artwork)。
 本分支沿用上游项目名称、许可证及署名。下方保留上游的 iPhone 功能和使用说明；
