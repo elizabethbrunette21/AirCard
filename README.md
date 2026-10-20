@@ -1,5 +1,28 @@
 # AirCard 🎴
 
+## 本分支：Apple Watch 交通卡卡面研究
+
+这是 [Mak5er/AirCard](https://github.com/Mak5er/AirCard) 的个人研究 fork。
+目标是让 **Apple Watch 原生钱包中的武汉交通卡显示自定义卡面**。
+
+**当前状态：可行性研究中，尚未实现或验证 Watch 卡面更新。**
+首个目标组合是 iPhone 13 / iOS 27.0.1 与 Apple Watch Series 10 / watchOS 26.6。
+优先研究 iPhone 端向手表更新支付卡资料的通路，实机验证成功后再整合进 App。
+跨设备转卡后的自动保持不属于当前范围。
+
+| 文档 | 内容 |
+| --- | --- |
+| [项目简介与实施路线](docs/PROJECT.md) | 目标、范围、成功标准及阶段计划 |
+| [协作规则](AGENTS.md) | 后续开发与设备实验的工作约定 |
+| [项目记忆](MEMORY.md) | 当前进度、环境、阻碍与下一步 |
+| [Watch 研究记录](docs/WATCH-RESEARCH.md) | 源码事实、实机观察、静态分析和实验顺序 |
+
+开发分支为 [`watch-card-artwork`](https://github.com/elizabethbrunette21/AirCard/tree/watch-card-artwork)。
+本分支沿用上游项目名称、许可证及署名。下方保留上游的 iPhone 功能和使用说明；
+其中的兼容性表与发行链接不代表本分支已支持 Apple Watch。
+
+---
+
 > **Apple Wallet Card Skinner & Lockscreen Passcode Themer (No Jailbreak Required)**  
 > **Supports iOS 18.0 – 27.0.1 & iOS 27.2 beta 1–2** (iOS 27.2 beta 3+ patched)  
 > Powered by the `airlift` AirTraffic sync exploit.
@@ -156,7 +179,7 @@ with the AirCard project.
 ## Building from Source
 
 ```sh
-git clone https://github.com/mak5er/AirCard.git
+git clone --branch watch-card-artwork https://github.com/elizabethbrunette21/AirCard.git
 cd AirCard
 chmod +x build.sh
 ./build.sh
