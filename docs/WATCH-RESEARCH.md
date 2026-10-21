@@ -181,3 +181,109 @@ build/companion_values_probe --self-test
 准备本地隔离客户端时，pymobiledevice3 11.40.2 的依赖下载连续超时，安装未完成；
 临时环境和缓存留在 Git 忽略的 `.tmp/` 中，没有增加产品依赖。
 下一次先解决客户端准备与受信任的开发服务连接，再做有界的清单请求，不默认下载整个缓存。
+
+## 2026-10-21：新版符号服务实机验证
+
+降低下载并发后，pymobiledevice3 **11.40.2** 的隔离环境安装完成。
+使用 [remote_symbols_probe.py](../tools/watch-research/remote_symbols_probe.py)，
+通过 `UserspaceRsdTunnel(autopair=False, remotepairing_fallback=False)` 连接既有受信任手机。
+它使用 `CoreDeviceProxy` 用户态通道，不停止 Mac 的 `remoted`、不创建新配对、不挂载 DDI。
+第三方诊断日志被关闭，临时客户端状态置于 `.tmp/`，连接结束后清理。
+
+实机返回 `iPhone14,5` / iOS **27.0.1 / `24A446`**。
+`RemoteFetchSymbolsService.get_dsc_file_list()` 成功返回 **82 个系统文件、
+总计 7,209,702,576 字节**。这证明当前系统的分析材料可读，不证明钱包文件可读写。
+
+先复制两个主缓存文件，大小分别为 786,432 与 33,783,808 字节，检查传输长度与缓存文件头。
+根据 [Apple 缓存格式定义](https://github.com/apple-oss-distributions/dyld/blob/main/include/mach-o/dyld_cache_format.h)
+读取索引，含目标框架的主缓存登记 4,690 个映像、77 个子缓存，缓存 UUID 为
+`3352F765-FFA1-3998-92F4-59A43221A2CF`。
+
+| 框架 | 主缓存索引中的 Mach-O UUID | 代码起始所在子缓存 |
+| --- | --- | --- |
+| NanoPassKit | `FA1C9659-15F8-3E46-BB12-BACCCC2FE202` | `.61` |
+| NanoRegistry | `A091FC1C-866D-33D8-9AC6-98F6D25732A8` | `.42` |
+| PassKitCore | `1F6E7BC3-43C0-32D0-907A-497F60A95471` | `.09` |
+
+以上 UUID 属于系统软件，不是设备标识。主缓存索引只能定位框架，不能替代函数实现分析。
+现成分析器需要完整配套缓存，82 个文件现已复制到 Git 忽略目录
+`.tmp/system-symbols/24A446/`。使用本地 `ipsw v3.1.739` 提取上述三个框架，
+`dwarfdump --uuid` 返回值与索引一致。没有提交系统二进制或完整反汇编。
+
+`ipsw` 来自其[官方发布](https://github.com/blacktop/ipsw/releases/tag/v3.1.739)，
+Apple Silicon 压缩包 SHA-256 与发布摘要一致：
+`c09e8eba02c332f5b50d15f94383e59dd35646d70f6ea9e78d185e9afda6abc2`。
+本机 `dyld_info` 对提取产物报告 `__objc_stubs` 对齐错误；改用缓存直接反汇编和
+`llvm-objdump`。所有分析均在本机，没有调用在线反编译服务。
+
+从仓库根目录复现：
+
+```sh
+# 已有信任、连接的目标手机；只查询清单
+.tmp/watch-research-env/bin/python tools/watch-research/remote_symbols_probe.py
+# 无设备自检
+python3 tools/watch-research/remote_symbols_probe.py --self-test
+# 显式复制主缓存，或复制已确认大小的完整系统缓存
+.tmp/watch-research-env/bin/python tools/watch-research/remote_symbols_probe.py --fetch-headers
+.tmp/watch-research-env/bin/python tools/watch-research/remote_symbols_probe.py --fetch-cache
+```
+
+复制模式仅接受目标构建 `24A446`，主缓存上限 128 MiB，完整清单上限 8 GiB；
+完整复制前检查本地剩余空间。探针不转卡、不访问卡包、不修改手机文件。
+完整复制复用库的下载器，失败后可能留下不完整本地文件；重试会重新下载大小不符的文件。
+下载器第二次查询的清单必须与检查过的清单一致，结束后逐个核对本地大小。
+不要把本地缓存、工具环境或系统二进制加入 Git。
+
+### 当前 iOS 27.0.1 的静态核对结果
+
+| 函数及缓存地址 | 直接观察到的行为 |
+| --- | --- |
+| `NPKHomeDirectoryPathForDevice`，`0x293129a50` | `valueForProperty:` 读取 `NRDevicePropertyLocalPairingDataStorePath`，追加 `NanoPasses` |
+| `NPKPaymentPassDirectoryPathForDevice`，`0x293129bb0` | 调用前一函数，追加 `PaymentCards` |
+| `NPKCompanionAgentConnection._savePaymentPass:atURL:forDevice:completion:`，`0x293113948` | 获取远程代理、卡包 `archiveData`、`uniqueID`、`NRDevicePropertyPairingID`，调用 `savePaymentPassData:withUniqueID:forPairingID:completion:` |
+| `NRDataFilePaths._pathToNanoRegistryPairingStorePathDirectory`，`0x23d2ba418` | 查询用户 Library 目录并追加 `DeviceRegistry`；仍未给出具体手表的子目录值 |
+| `NRPairedDeviceRegistry.pairingStorePathPairingID:`，`0x23d2da08c` | 从设备属性取得目录和 pairing ID，经回调返回；方法参数不是要查询的 ID |
+
+共享缓存里的 Objective-C 跳板也已解析，确认上述 selector，未仅凭方法名推测调用。
+这将目录构造和客户端保存链从旧版线索提升为目标手机构建的静态事实。
+服务端守卫与手表导入行为的现有证据仍来自 26.5 模拟器，不能自动外推为 27.0.1 / 26.6 实测。
+
+另查本机 `devicectl device info files --help`，公开域仅有 App 容器、App Group、
+临时目录及系统崩溃日志，没有通用的用户 Library 域。
+`device pairings list` 返回 `ArgumentParserInternal.ValidationError`，未取得配对列表；
+此结果不作为手机目录访问权限的证据。
+
+### 手机本地只读 NanoRegistry 探针
+
+新增 [registry_probe.m](../tools/watch-research/registry_probe.m) 与
+[Xcode 项目](../tools/watch-research/RegistryProbe.xcodeproj/project.pbxproj)。
+独立标识为 `dev.aircard.WatchRegistryProbe`，使用现有开发团队签署自己的配置，
+没有复用或覆盖其他 App。它加载 NanoRegistry、查询活动设备及目录属性，
+仅向自己的 `Documents/registry-result.json` 写结果；没有卡包读取或保存 API 调用。
+若返回真实目录，结果只能保存在本地忽略目录，不能提交到仓库。
+
+实机过程与结果：
+
+1. 初版启动后收到 `SIGTRAP`，仅分析本探针的崩溃报告。
+   故障栈为 `UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption`。
+   已改用 UIScene 生命周期，重新构建、签名、安装和运行成功。
+2. 修复后的结果文件返回 `status = completed`、`frameworkLoaded = true`、
+   `registryAvailable = true`、`activeDeviceFound = false`、`pathFound = false`。
+   这是普通开发 App 的首次活动设备查询结果，不是全部目录读取方式被拒绝的证明。
+3. 为排除查询时机与活动设备选择的影响，探针增加 `getPairedDevices` / `getAllDevices`
+   数量检查及一次 3 秒等待。当前版本已构建、签名和安装，尚未取得这次复核结果：
+   启动明确返回 `CoreDeviceError 10002`，底层 `FBSOpenApplicationErrorDomain 7 / Locked`。
+   已请用户解锁并暂时保持亮屏；没有要求重连、转卡或开启开发者模式。
+
+编译检查（不签名、不接触手机）：
+
+```sh
+xcodebuild -project tools/watch-research/RegistryProbe.xcodeproj \
+  -scheme WatchRegistryProbe -configuration Debug -sdk iphoneos \
+  -destination generic/platform=iOS -derivedDataPath .tmp/registry-probe-build \
+  CODE_SIGNING_ALLOWED=NO build
+```
+
+实机签名需使用本机开发团队，并为该独立标识准备配置；团队与配置不写入项目文件。
+`devicectl device process launch` 的选项必须放在 bundle identifier 之前。
+结果复制限定为此 App 自有容器；原始崩溃报告、签名产物和诊断结果均在 `.tmp/`。

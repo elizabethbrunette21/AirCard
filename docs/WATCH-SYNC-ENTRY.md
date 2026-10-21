@@ -23,6 +23,12 @@ UUID 标识的是系统二进制，不是用户设备。没有把系统二进制
 这些版本与目标 **iOS 27.0.1 / watchOS 26.6** 不同。
 下文先记录静态调用链，文末单独记录实际执行过的模拟器状态实验。
 
+2026-10-21 后续已读取目标 **iOS 27.0.1 / `24A446`** 的系统共享缓存并提取三个框架。
+当前构建确认了相同的 `localPairingDataStorePath → NanoPasses → PaymentCards` 构造，
+以及 `archiveData → savePaymentPassData:withUniqueID:forPairingID:completion:` 客户端调用。
+具体地址与软件 UUID 见[当前版本核对记录](WATCH-RESEARCH.md#当前-ios-2701-的静态核对结果)。
+这项核对不包括当前实机的服务端权限、手表端导入或真实卡包同步。
+
 ## 支付卡资料的来源
 
 `NPKHomeDirectoryPathForDevice` 读取设备的

@@ -40,7 +40,7 @@
 - 本机缓存的 iOS **26.6.1** NanoPassKit 框架提供了按手表保存支付卡资料的线索；
   保存函数会取得 `archiveData`，再调用远程对象的
   `savePaymentPassData:withUniqueID:forPairingID:completion:`。
-  尚未验证这个流程在 **27.0.1** 上的实现、调用权限及向手表更新图片的效果。
+  后续已核实 **27.0.1** 客户端的同一调用，见下；调用权限及手表实际采用图片仍未验证。
 - 后续对 **iOS / watchOS 26.5 模拟器运行时**的静态分析，定位了支付卡的现行同步链：
   手机 `NPDCompanionPassSyncService` 读取按手表保存的 `NanoPasses/PaymentCards`，
   经同步引擎发送卡包；手表 `NPKStandaloneWatchPassSyncService` 将完整卡包交给
@@ -67,24 +67,47 @@
 - 新增只读 `tools/watch-research/companion_values_probe.m`，编译、自检和实机查询均完成。
   `GetValueFromRegistry` 查询 `productType`、`systemVersion`、`localPairingDataStorePath`
   均收到 `UnsupportedWatchKey`。这条按 NanoRegistry 字段名查询的路线没有提供目录。
+- 2026-10-21 后续推进：pymobiledevice3 11.40.2 已安装到隔离环境，降低下载并发后安装成功。
+  新探针 `tools/watch-research/remote_symbols_probe.py` 通过已有信任的用户态开发通道，
+  在目标 iOS 27.0.1 上成功调用 `com.apple.dt.remoteFetchSymbols`，读到 82 个文件、
+  共 7,209,702,576 字节。完整缓存已复制到 Git 忽略目录，三个目标框架已提取并核对软件 UUID。
+  此结果只证明系统分析材料可读，不是手表卡面更新入口。
+- 当前 iOS 27.0.1 的 `NPKHomeDirectoryPathForDevice` 仍读取
+  `NRDevicePropertyLocalPairingDataStorePath` 并追加 `NanoPasses`，支付卡目录再追加 `PaymentCards`。
+  `_savePaymentPass:atURL:forDevice:completion:` 仍获取 `archiveData`、`uniqueID` 和手表 pairing ID，
+  交给远程保存对象。这里只验证了当前手机框架的客户端实现，没有取得真实目录或服务端权限。
+- 已构建、签名并在手机安装独立只读 App `dev.aircard.WatchRegistryProbe`。
+  修复 iOS 27 对 UIScene 生命周期的要求后，首次查询正常结束：框架和登记对象可用，
+  `getActivePairedDevice` 返回空，未取得目录。不能据此认定手机没有配对手表或所有读取方式均无权限。
+  新版增加配对列表数量和一次 3 秒初始化等待，已构建并安装；启动被系统 `Locked` 拒绝，待用户解锁复核。
+  App 只向自身容器写诊断结果，没有读卡包或调用保存接口。
 
 ## 当前阻碍与下一步
 
 已定位系统内部更新链，仍缺少经过目标实机验证、AirCard 能触发的入口。下一步依次确认：
 
-1. 利用已恢复的手机开发连接，验证 `com.apple.dt.remoteFetchSymbols`，核实 iOS 27.0.1 实现。
-   已定位 pymobiledevice3 的 `RemoteFetchSymbolsService.get_dsc_file_list()`；尚未调用实机。
-   本地隔离环境 `.tmp/watch-research-env` 的依赖安装因下载超时失败，不能视为可用客户端。
+1. 待手机解锁后，启动已安装的只读探针，核对配对列表及初始化后的查询结果。
+   首次活动设备查询为空；复核尚未执行，不要直接当成权限拒绝。
+   当前系统缓存及三个框架已经取得；隔离客户端位于 `.tmp/watch-research-env`。
    手表资料目录仍未知；不要重复请求已被拒绝的三个登记字段来代替新的取证方式。
 2. 取得属于手表的卡包副本与恢复依据；不能用手机卡包覆盖手表卡包。
 3. 验证图像及资源清单的变更能否经系统正常的库变化事件或服务初始化扫描触发同步。
 4. 前三项具备条件后，开展单卡、单图的最小实机验证；不改业务版本或支付资料。
 
-手机连接已经确认；卡片保留在手机，无需重复打开钱包页面、转卡或重启。
+手机连接已经确认；最新启动失败有明确锁屏错误。只需解锁并暂时保持亮屏，
+卡片保留在手机，无需重复打开钱包页面、转卡或重启。
 详细调用链、版本依据和限制见 [同步入口分析](docs/WATCH-SYNC-ENTRY.md)，
 历史实验见 [研究记录](docs/WATCH-RESEARCH.md)。
 
 ## 本地研究材料
+
+当前仓库的 Git 忽略目录还保存：
+
+- `.tmp/system-symbols/24A446/`：目标系统缓存、三个提取框架及局部反汇编。
+  `cache-path.txt` 记录本机主缓存路径；无需再次下载完整缓存。
+- `.tmp/tools/ipsw`：已校验摘要的本地分析器。
+- `.tmp/registry-probe-build/`：签名后的独立 iPhone 探针；手机当前已安装最新版。
+- `.tmp/registry-probe-result.json`：首次有效运行的结果，不代表待解锁复核已经完成。
 
 原工作区在仓库外的 `../watch-research/` 留有：
 
