@@ -104,6 +104,15 @@ flowchart TD
 
 ## 权限与触发方式
 
+### 读取手表登记也有权限边界
+
+目标 iOS 27.0.1 上，独立开发 App 的 NanoRegistry 查询在解锁及 3 秒初始化等待后，
+仍返回空设备列表；同次 Mac companion 服务返回 1 条手表登记。
+当前系统的集合返回方法具有 `hasEntitlements` 守卫，探针没有相应权限。
+因此不能把“开发 App 能加载私有框架”当成“能读取真实目录”。
+这条普通 App 直读路线未打通，具体证据与限制见
+[解锁后的复核](WATCH-RESEARCH.md#用户解锁后的复核与权限边界)。
+
 ### 直接调用保存 API 有权限门槛
 
 手机 `NPKCompanionAgent.listener:shouldAcceptNewConnection:` 对保存服务的 XPC 连接检查

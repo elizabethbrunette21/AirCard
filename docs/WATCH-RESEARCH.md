@@ -287,3 +287,47 @@ xcodebuild -project tools/watch-research/RegistryProbe.xcodeproj \
 实机签名需使用本机开发团队，并为该独立标识准备配置；团队与配置不写入项目文件。
 `devicectl device process launch` 的选项必须放在 bundle identifier 之前。
 结果复制限定为此 App 自有容器；原始崩溃报告、签名产物和诊断结果均在 `.tmp/`。
+
+### 用户解锁后的复核与权限边界
+
+用户确认解锁后，已成功重新启动上述探针并从它的自有容器取回结果：
+
+| 检查 | 实机结果 |
+| --- | --- |
+| `status` | `completed` |
+| 框架加载 / 登记对象创建 | 均成功 |
+| 首次 `getPairedDevices` 数量 | 0 |
+| 等待 3 秒后 `getPairedDevices` 数量 | 0 |
+| `getAllDevices` 数量 | 0 |
+| 活动设备 / 目录属性 | 均未取得 |
+| 同次 Mac `companion_proxy / GetDeviceRegistry` 对照 | 1 条登记记录 |
+
+因此，此结果不能解释为手机没有配对手表；也没有支持继续等待初始化或要求重连的证据。
+
+对同一 **iOS 27.0.1 / `24A446`** NanoRegistry 的进一步静态核对：
+
+- `NRRegistryProxy.xpcGetDeviceCollectionWithBlock:` 位于 `0x23d2eabd8`。
+  `0x23d2eac00` 调用的跳板 `0x24005c350` 已解析为 `hasEntitlements`，
+  其结果被保存并传入最终回调。
+- 最终回调 `0x23d2ead98` 在权限位为真时返回集合；否则在 `0x23d2eadc4` 分支
+  把两个集合参数设为 nil，把权限结果设为 false。
+- `NRXPCProxy.hasEntitlements`，`0x23d2eec14`，检查权限位掩码是否非零。
+  `NRRegistryProxy.entitlements` 登记的权限包含 `com.apple.nano.nanoregistry`、
+  `com.apple.nano.nanoregistry.generalaccess` 等；本探针的 `.xcent` 签名输入没有这些权限。
+- `NRRegistryProxy.requireAnEntitlement` 返回 false，只涉及连接层要求；
+  不能由此认为集合读取没有权限守卫。客户端收到无权限标志后还会进入
+  `_warnAboutMissingEntitlement`，但其日志输出受额外条件限制。
+
+以上是**静态代码事实与实机结果的交叉验证**，不是捕获到明确服务端拒绝消息。
+一次 18 秒的有限采样中，日志流和探针启动均成功，观察到 4 条本探针的 NanoRegistry 日志，
+两个已知缺权限警告均未命中；后续一次采样中探针启动失败，没有取得补充日志。
+未保留原始设备日志，未用未命中的日志来证明权限允许或拒绝。
+
+当前判断：普通开发 App 直接查询 NanoRegistry 的路线不具备继续读取目录的条件。
+没有尝试添加未被开发配置授予的 Apple 私有权限，未调用登记或卡包写入接口。
+
+后续转向已能读取登记记录的 Mac 服务。已确认本机 MobileDevice 中
+`CPXCopyValueFromPairedDevice` 使用 `GetValueFromRegistry` / `GetValueKeyKey`，
+与之前的探针属于同一协议，不能把换用此包装函数当成新的数据访问能力。
+当前已提取的 `CompanionServices` 与 `liblockdown.dylib` 中未定位到这一请求处理器，
+尚无可用字段清单、真实手表目录或已验证的导出命令。
