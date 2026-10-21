@@ -1,6 +1,6 @@
 # Apple Watch 卡面研究记录
 
-记录日期：2026-10-20。
+初始记录日期：2026-10-20；最近更新：2026-10-21。
 源码基线：`52ba05dca4bdc590672c19d554701f4438e20338`。
 当前结论：**尚无经过实机验证的 Watch 卡面写入或更新方案。**
 
@@ -44,7 +44,7 @@ iPhone 新卡面生效、配对 Watch 仍显示默认图片的现象。
 | --- | --- |
 | iPhone | `iPhone14,5`，iOS 27.0.1 / `24A446` |
 | Watch | `Watch7,9`，watchOS 26.6 / `23U67` |
-| CoreDevice 状态快照 | `paired`，传输类型 `localNetwork`，隧道 `disconnected`，开发者模式 `disabled` |
+| Watch CoreDevice 早期状态快照 | `paired`，传输类型 `localNetwork`，隧道 `disconnected`，开发者模式 `disabled`；不代表手机状态 |
 | 手机连接 | 获得设备服务访问后，USB 枚举与手机日志流成功 |
 | 配对登记查询 | `com.apple.companion_proxy` / `GetDeviceRegistry` 返回 1 条记录 |
 | 日志采样 | 35 秒初次采样；用户打开 Watch 钱包页面后的 30 秒采样；25 秒补充采样 |
@@ -130,3 +130,54 @@ iPhone 新卡面生效、配对 Watch 仍显示默认图片的现象。
 
 现有本地探针和日志摘要工具保存在原工作区的仓库外目录，没有随本 fork 发布。
 本文件保存可共享的结果；新环境复现时应先确认工具与系统条件，不能假定本机材料存在。
+
+## 2026-10-21：手机恢复连接后的只读检查
+
+用户再次确认武汉交通卡在 iPhone。本次 MobileDevice 实时枚举读到
+`iPhone14,5` / iOS **27.0.1 / `24A446`**，已有信任会话成功。
+CoreDevice 的手机详情为 `paired`、`wired`、隧道 `connected`、开发者模式 `enabled`，
+`ddiServicesAvailable` 为真。另以 `ddiServices --no-auto-mount-ddis` 查询，
+当前 DDI 的 `isUsable` 和 `contentIsCompatible` 均为真；没有请求挂载或更新镜像。
+
+| 只读请求 | 实机结果 | 能得出的结论 |
+| --- | --- | --- |
+| `GetDeviceRegistry` | 1 条配对标识记录 | 手机的手表登记可读取 |
+| 直接 lockdown 启动 `com.apple.dt.fetchsymbols` | `-402653150` / `0xe8000022`；`AMDCopyErrorText` 为 `The service is invalid.` | 此启动方式未取得服务，尚未查询符号文件；不是连接失败或所有符号入口都不存在的证明 |
+| `GetValueFromRegistry` → `productType` | `UnsupportedWatchKey` | 此字段名未获支持 |
+| `GetValueFromRegistry` → `systemVersion` | `UnsupportedWatchKey` | 此字段名未获支持 |
+| `GetValueFromRegistry` → `localPairingDataStorePath` | `UnsupportedWatchKey` | 未能由此取得手表资料目录 |
+
+后三个键名来自 NanoRegistry 分析线索，不是 companion 服务已公布的支持清单。
+请求格式依据
+[pymobiledevice3 companion 实现](https://github.com/doronz88/pymobiledevice3/blob/master/pymobiledevice3/services/companion.py)。
+实验说明不能把“配对登记可枚举”扩展为“任意 NanoRegistry 属性可读取”。
+未测试其他命名，不把这三个拒绝结果推广为所有键均不支持。
+
+本次可复现的查询探针是
+[companion_values_probe.m](../tools/watch-research/companion_values_probe.m)。
+它要求已有信任及恰好一个配对登记标识，每次查询重新开启服务，最长运行 30 秒；
+输出固定查询键、结果类型或已知错误，不输出标识、返回字典键或属性值。
+`completed: true` 仅表示请求批次执行结束，不表示字段查询成功。
+
+从仓库根目录编译并执行无设备自检：
+
+```sh
+mkdir -p build
+xcrun clang -fobjc-arc -O2 -Wall -Wextra \
+  -framework Foundation -framework CoreFoundation \
+  /System/Library/PrivateFrameworks/MobileDevice.framework/MobileDevice \
+  tools/watch-research/companion_values_probe.m -o build/companion_values_probe
+build/companion_values_probe --self-test
+```
+
+实际查询以已有信任手机标识作为唯一参数；不要把该参数或原始登记响应提交到仓库。
+本轮编译、自检和实际查询均完成，未转卡、未操作钱包文件，也未取得可恢复卡包。
+下一步优先查明现代开发连接上的符号访问方式，再核实目标系统的目录及触发条件。
+
+进一步查到 pymobiledevice3 的
+[RemoteFetchSymbolsService](https://github.com/doronz88/pymobiledevice3/blob/master/pymobiledevice3/services/remote_fetch_symbols.py)
+使用 `com.apple.dt.remoteFetchSymbols`，通过 RemoteXPC 查询 DSC 文件清单与大小。
+这是不同于旧 lockdown 服务的候选分析入口，尚未在目标设备调用，不能写成已可用。
+准备本地隔离客户端时，pymobiledevice3 11.40.2 的依赖下载连续超时，安装未完成；
+临时环境和缓存留在 Git 忽略的 `.tmp/` 中，没有增加产品依赖。
+下一次先解决客户端准备与受信任的开发服务连接，再做有界的清单请求，不默认下载整个缓存。

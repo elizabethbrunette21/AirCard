@@ -26,7 +26,7 @@
 | Apple Watch | Series 10，设备型号 `Watch7,9` |
 | watchOS | 26.6，构建号 `23U67` |
 | 交通卡 | 武汉交通卡 |
-| 卡片位置 | 用户最后报告在 iPhone；实机写入前需重新确认 |
+| 卡片位置 | 用户于 2026-10-21 再次确认在 iPhone；本轮没有转卡 |
 
 ## 已确认
 
@@ -50,26 +50,37 @@
 - 同步状态包含资源清单哈希；只替换 PNG 可能不触发更新。
   `_handleUpdateAndSendToGizmoForPass` 是会被 standalone 分支跳过的旧发送路径，
   不再将它作为当前 Watch 的实现依据。
-- 2026-10-20 后半段获得设备服务访问权限后的两次枚举均为空，尚未运行当前系统的符号清单请求。
-  已请求用户确认实时连接与解锁；没有把原因断定为线缆断开。
+- 2026-10-20 后半段获得设备服务访问权限后的两次枚举均为空，当时未运行符号清单请求。
+  没有把原因断定为线缆断开；后续连接结果见下。
 - 2026-10-21 在独立 Watch 模拟器上调用实际 NanoPassKit 同步引擎，验证了：
   同业务版本的新资源清单哈希被识别为更新，无冲突时允许应用；更高的本地业务版本会阻止覆盖。
   保留旧哈希的对照组不会被识别为更新。仅使用合成内存对象，没有导入钱包或发送 IDS 消息。
   工具位于 `tools/watch-research/`；临时模拟器已清理。
-- 2026-10-21 再次检查：MobileDevice 无设备、CoreDevice 的目标 iPhone 为 `unavailable`，
-  USB 清单没有 iPhone。已询问当前连接与交通卡所在设备，尚未收到新确认。
-  本机备份元数据访问被系统拒绝，未读取备份内容。
+- 2026-10-21 较早一次检查没有检测到 iPhone；本机备份元数据访问被系统拒绝，未读取备份内容。
+- 2026-10-21 用户再次询问后，已恢复实时检测：iPhone 13 / iOS 27.0.1 / `24A446`，
+  CoreDevice 为 `wired` / `connected` / `paired`，手机开发者模式已开启。
+  只读 `ddiServices --no-auto-mount-ddis` 返回当前 DDI 可用且兼容。
+  配对登记查询仍返回 1 条记录。无需再要求用户换线或开启手机开发者模式。
+- 同次实机检查，直接 lockdown 启动 `com.apple.dt.fetchsymbols` 返回
+  `-402653150` / `0xe8000022`，系统错误文本为 `The service is invalid.`。
+  未取得符号清单；不能据此排除通过现代开发服务获取符号的方式。
+- 新增只读 `tools/watch-research/companion_values_probe.m`，编译、自检和实机查询均完成。
+  `GetValueFromRegistry` 查询 `productType`、`systemVersion`、`localPairingDataStorePath`
+  均收到 `UnsupportedWatchKey`。这条按 NanoRegistry 字段名查询的路线没有提供目录。
 
 ## 当前阻碍与下一步
 
 已定位系统内部更新链，仍缺少经过目标实机验证、AirCard 能触发的入口。下一步依次确认：
 
-1. 恢复手机实时连接，核实 iOS 27.0.1 的对应实现和配对设备目录值。
+1. 利用已恢复的手机开发连接，验证 `com.apple.dt.remoteFetchSymbols`，核实 iOS 27.0.1 实现。
+   已定位 pymobiledevice3 的 `RemoteFetchSymbolsService.get_dsc_file_list()`；尚未调用实机。
+   本地隔离环境 `.tmp/watch-research-env` 的依赖安装因下载超时失败，不能视为可用客户端。
+   手表资料目录仍未知；不要重复请求已被拒绝的三个登记字段来代替新的取证方式。
 2. 取得属于手表的卡包副本与恢复依据；不能用手机卡包覆盖手表卡包。
 3. 验证图像及资源清单的变更能否经系统正常的库变化事件或服务初始化扫描触发同步。
 4. 前三项具备条件后，开展单卡、单图的最小实机验证；不改业务版本或支付资料。
 
-目前需要恢复实时连接；无需重复打开钱包页面、转卡或重启。
+手机连接已经确认；卡片保留在手机，无需重复打开钱包页面、转卡或重启。
 详细调用链、版本依据和限制见 [同步入口分析](docs/WATCH-SYNC-ENTRY.md)，
 历史实验见 [研究记录](docs/WATCH-RESEARCH.md)。
 
@@ -80,7 +91,8 @@
 - `companion_probe.m`：配对登记查询及响应校验，不含卡面写入。
 - `observe_watch.py`：有限时长的手机日志摘要采集。
 - `findings.json`：已脱敏的环境、观察结果与静态分析摘要。
-- `symbols_probe.m`：只查询设备可提供的符号文件清单，已编译；尚未执行服务请求。
+- `symbols_probe.m`：只查询设备可提供的符号文件清单，已编译并执行服务请求；
+  当前直接 lockdown 启动方式返回 InvalidService，未进入清单读取。
 
 这些材料没有纳入本 fork，新克隆不保证存在。可共享的事实已整理到研究记录。
 尚未通过这些工具转移卡片、修改卡面或验证 Watch 文件访问；原始设备日志未保存。
